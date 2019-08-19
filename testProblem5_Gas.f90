@@ -6,26 +6,23 @@ use planewall_mod
 implicit none
 
 integer, parameter:: &
-	nWalls=5, &
-	SC_NoOfNodes_i=10
+	SC_NoOfNodes_i=10, &  !SC_NoOfNodes_i denotes the no. of nodes in the slab conduction
+	nWalls = 9
 	
 integer :: i,j,k,z, &
 	SC_NoLayers_i, &
 	SC_IbcFlag_i, SC_ObcFlag_i, &
-	SC_TransientFlag_i
+	SC_TransientFlag_i, &
+	no_walls
 
-real*8 :: sigma_d, temp_c, heat_1, heat_2, &		  
+real*8 :: sigma_d, &		  
 		  SC_Hin_d, SC_Tin_d, SC_HeatInner_d, &
 		  SC_Hout_d, SC_Tout_d, SC_HeatOuter_d, &
 		  SC_DeltaT_d, simTime_d, endTime_d, &
-		  outHeat_d, SC_ConvCriterion_d, &
+		  SC_ConvCriterion_d, &
 		  StoredEnergy_d, netOutHeat_d, &
-		  Cy_ThermCond_d,Cy_Rho_d,Cy_Cp_d, &
-		  Qin_Cy_d, Cy_TempOld_ad, Cy_Temp_ad, &
-		  	Cy_Thick_ad, &
-			Cy_Dia_ad,Cy_StoredEnergy_d, &
-			num,den
-
+		  Qin_plate, &
+		  num,den
 		  
 real *8, dimension(SC_NoOfNodes_i) :: &
 	SC_TempOld_ad, &
@@ -47,9 +44,10 @@ real*8, dimension(nWalls) :: &
 	heat_inner_walls, &
 	Walls_StoredEnergy_ad,&
 	Walls_outHeat_ad, &
-	GasHTC_ad
+	GasHTC_ad, &
+	Wall_Area_ad,&
+	Wall_thk_ad
 	
-
 real*8, dimension(nWalls,nWalls) :: &
 	shapeFactors_ad, &
 	matrixA_ad
@@ -62,13 +60,13 @@ real*8, dimension(1) :: &
 	GasTemp_ad, &
 	GasTempPrev_ad
 	
-
 integer, dimension(nWalls,nWalls) :: &	
 	deltaKronecker_ai
 
 simTime_d=0.0
 sigma_d=5.67E-08
 
+!Setting up Kronecker's delta
 do i=1,nWalls
 	do j=1,nWalls
 		if (j==i) then
@@ -79,36 +77,28 @@ do i=1,nWalls
 	end do
 end do
 
-
 open(200, file='Results.dat', ACTION='WRITE')
-open(201, file='WallTemp2.dat', ACTION='WRITE')
-open(202, file='WallTemp3.dat', ACTION='WRITE')
-open(203, file='WallTemp4.dat', ACTION='WRITE')
-open(204, file='WallTemp5.dat', ACTION='WRITE')
-open(205, file='GasTemp.dat', ACTION='WRITE')
+open(201, file='WallTemp.dat', ACTION='WRITE')
+open(202, file='GasTemp.dat', ACTION='WRITE')
 write(200,*) "Time, Temperature, HeatIn, HeatOut, HeatLossConvection, EnergyStored"
+write(201,*) "Wall_2, Wall_3, Wall_4, Wall_5, Wall_6, Wall_7, Wall_8, Wall_9"
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Reading data from input file
-open(2, file='inputs3.dat')
+open(2, file = 'inputs3.dat')
+
 read(2,*) ! Wall Temperatures
 read(2,*)(wallTemp_ad(i),i=1,nWalls)
-print *,wallTemp_ad
 
 read(2,*) ! Wall Emissivities
 read(2,*)(wallEmiss_ad(i),i=1,nWalls)
 
 read(2,*) ! Wall HeatFlux
-read(2,*)(wallHeatFlux_ad(i),i=1,nWalls)
-print *, "WallHeatFlux ", wallHeatFlux_ad
-!print *,wallEmiss_ad
+read(2,*)(wallHeatFlux_ad(i),i=2,nWalls)
+
 read(2,*) ! Shape Factors
 do j=1,nWalls
 	read(2,*)(shapeFactors_ad(j,i),i=1,nWalls)
-end do
-
-do i=1,nWalls
-	print *, shapeFactors_ad(i,:)
 end do
 
 ! read simulation end Time
@@ -119,42 +109,44 @@ read(2,*) endTime_d
 read(2,*)
 read(2,*) SC_DeltaT_d
 
-
 ! read material properties: k, rho, Cp
 read(2,*)
 do i=1,nWalls
 	read(2,*) SC_ThermCond_ad(i), SC_Rho_ad(i), SC_Cp_ad(i)
 end do 
+
+! read area
+read(2,*)
+read(2,*)(Wall_Area_ad(i),i=1,nWalls)
+print *, Wall_Area_ad
+! read thickness
+read(2,*)
+read(2,*)(Wall_thk_ad(i),i=1,nWalls)
+
 ! read outer surface BC:: h(W/m2k), T_ambient (K)
 read(2,*)
-read(2,*) 	SC_Hout_d, SC_Tout_d 
+read(2,*) SC_Hout_d, SC_Tout_d 
 
 ! read Convergence criterion
 read(2,*)
-read(2,*) 	SC_ConvCriterion_d
+read(2,*) SC_ConvCriterion_d
 
-! read cylinder material properties: k, rho, Cp
+! read Qin plate :
 read(2,*)
-read(2,*) Cy_ThermCond_d, Cy_Rho_d, Cy_Cp_d
-
-! read cylinder : D, T
-read(2,*)
-read(2,*) Cy_Thick_ad, Cy_Dia_ad	
-
-! read Qin cylinder :
-read(2,*)
-read(2,*) Qin_Cy_d
+read(2,*) Qin_plate
 
 ! read HTC for gas convection on inner sides
 read(2,*)
-read(2,*) (GasHTC_ad(i), i=1,nWalls)
+read(2,*)(GasHTC_ad(i),i=1,nWalls)
 
- close(2)
+close(2)
+
 ! Finished reading inputs
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-
-wallHeatFlux_ad(1)=Qin_Cy_d/(3.14*Cy_Dia_ad)
+!Heat flux due to the radiant plate
+wallHeatFlux_ad(1)=Qin_plate/Wall_Area_ad(1)
 
 do i=1, nWalls
 	do j=1, SC_NoOfNodes_i
@@ -163,27 +155,18 @@ do i=1, nWalls
 	end do	
 end do
 
-GasTemp_ad(1)=750.0
+GasTemp_ad(1) = 750.0
 GasTempPrev_ad = GasTemp_ad
-!do i=1, nWalls
-!	write(200,*) i, simTime_d, SC_Temp_ad(i,1)
-!end do
 
-simTime_d=simTime_d+SC_DeltaT_d
+simTime_d = simTime_d+SC_DeltaT_d
 	
-!	Cy_TempOld_ad = wallTemp_ad(1) 
-
-
 ! creating matrix A
 20 do while(simTime_d<=endTime_d)
-!	simTime_d=simTime_d+SC_DeltaT_d
 	z=0
-	print *, "simTime_d", simTime_d
 
-	10 print *,"		Iteration: ", z
+	10  z=z+1
 	
-
-	z=z+1
+	! Kronecker's Delta
 	do i=1,nWalls
 		do j=1,nWalls
 			if (i.eq.1) then
@@ -195,12 +178,6 @@ simTime_d=simTime_d+SC_DeltaT_d
 		end do
 	end do
 
-	!print *, "Matrix A"
-	!do i=1,nWalls
-	!	print *, matrixA_ad(i,:)
-	!end do
-
-	!print *
 	! creating matrix C
 
 	do i=1,nWalls
@@ -210,52 +187,36 @@ simTime_d=simTime_d+SC_DeltaT_d
 			matrixC_ad(i)=wallEmiss_ad(i)*sigma_d*wallTemp_ad(i)**4
 		end if
 	end do
-
-	!print *, "Matrix C"
-	!print *, matrixC_ad
-
-		call matrixsolver(nWalls,matrixA_ad,matrixC_ad,wallHeatFluxOut_ad)
+	
+	! Solving AX = C
+	call matrixsolver(nWalls,matrixA_ad,matrixC_ad,wallHeatFluxOut_ad)
 
 
-	!print *
-	!print *, "qo"
-	!print *, wallHeatFluxOut_ad
-	!print *
+	!"-----------------------   RESULTS --------------------------"
 
-
-	!print *,"-----------------------   RESULTS --------------------------"
-
-
-!	heat_1=wallEmiss_ad(1)/(1-wallEmiss_ad(1))* &
-!				(sigma_d*wallTemp_ad(1)**4-wallHeatFluxOut_ad(1))
-!	heat_1=heat_1*2.0*22.0/7.0*0.5
-	!print *, "Heat in 1st surface = ", heat_1
 	do i=2,nWalls
-		heat_inner_walls(i)=wallEmiss_ad(i)/(1.0d0-wallEmiss_ad(i))* &
-				(sigma_d*wallTemp_ad(i)**4-wallHeatFluxOut_ad(i)) + &
-				(GasHTC_ad(i)*(wallTemp_ad(i)-GasTemp_ad(1)))
-		heat_inner_walls(i)=heat_inner_walls(i)*2.0
-	enddo	
+		heat_inner_walls(i) = wallEmiss_ad(i)/(1.0d0-wallEmiss_ad(i))* &
+				(sigma_d * wallTemp_ad(i)**4 - wallHeatFluxOut_ad(i)) + &
+				(GasHTC_ad(i)*(wallTemp_ad(i) - GasTemp_ad(1)))
+		!To compare the heat input and heat output
+		heat_inner_walls(i)=heat_inner_walls(i)*Wall_Area_ad(i) 
+	end do	
 
-	!print *, "Heat in 2nd surface = ", heat_2
 
-	!print *,"-----------------------   RESULTS --------------------------"
+	!"-----------------------   RESULTS --------------------------"
 
 	do i=1,5
 		if (i.eq.1) then
-		temp_c=(1/sigma_d * (wallHeatFlux_ad(i)* wallEmiss_ad(i)/(1-wallEmiss_ad(i)) &
+		wallTemp_ad(i)=(1/sigma_d * (wallHeatFlux_ad(i)* wallEmiss_ad(i)/(1-wallEmiss_ad(i)) &
 							+ wallHeatFluxOut_ad(i)))**0.25
-		wallTemp_ad(i)=temp_c
-	!	write(304,*)simTime_d, i, temp_c
 		end if
-	!	print *, "Temp of wall" ,i, temp_c 
 	end do
 
 	do i=2,nWalls
 		SC_NoLayers_i=1
 		SC_NoNodesLayer_ai(1) = SC_NoOfNodes_i - 2
-		SC_Thick_ad(1)=0.33
-		SC_Area_ad(1)=2.0
+		SC_Thick_ad(1)=Wall_thk_ad(i)
+		SC_Area_ad(1)=Wall_Area_ad(i)
 		SC_IbcFlag_i=2
 		SC_Hin_d=0.0
 		SC_Tin_d=0.0
@@ -268,8 +229,6 @@ simTime_d=simTime_d+SC_DeltaT_d
 			SC_TempOld_ad(k)=Wall_TempOld_ad(i,k)
 		end do	
 		
-		
-
 		! calling slab conduction 
 
 		call planewall(SC_NoLayers_i, &
@@ -294,11 +253,7 @@ simTime_d=simTime_d+SC_DeltaT_d
 						 SC_X_ad, &
 						 SC_Temp_ad)
 						 
-				!write(303,*) "old",Cy_TempOld_ad
-!				Cy_Temp_ad = ((Qin_Cy_d*SC_DeltaT_d)/ &
-!				(Cy_Rho_d*Cy_Cp_d*3.14*Cy_Thick_ad*((Cy_Dia_ad/2)**2)))+Cy_TempOld_ad	
-			
-			!write(303,*) Cy_Temp_ad
+		
 		do j = 1, SC_NoOfNodes_i
 			Wall_Temp_ad(i,j) = SC_Temp_ad(j)
 			Wall_X_ad(i,j) = SC_X_ad(j)
@@ -306,35 +261,31 @@ simTime_d=simTime_d+SC_DeltaT_d
 			
 	end do	
 	
-		! Calculating Gas Temperature
+	! Calculating Gas Temperature
 	num=0.0
 	den=0.0
 	do i=1,nWalls
-		if (i.eq.1) then
-			num=num + GasHTC_ad(i)*(3.14*Cy_Dia_ad)*wallTemp_ad(i)
-			den=den + GasHTC_ad(i)*(3.14*Cy_Dia_ad)
-		else
-			num=num + GasHTC_ad(i)*2.0*wallTemp_ad(i)
-			den=den + GasHTC_ad(i)*2.0	
-		endif
+		num=num + GasHTC_ad(i)*Wall_Area_ad(i)*wallTemp_ad(i)
+		den=den + GasHTC_ad(i)*Wall_Area_ad(i)
 	end do
 	GasTemp_ad(1)=num/den
-!	print *, z, GasTemp_ad	
+
 	
-	 !print *,"X array ", SC_X_ad
-	 !print *, "Temperatures ", SC_Temp_ad
-	 !outHeat_d=SC_Hout_d*SC_Area_ad(1)*(SC_Temp_ad(SC_NoOfNodes_i)-SC_Tout_d)
-	 
-	!print *, "Error ", dabs(SC_Temp_ad(1) - wallTemp_ad(2))
+!	do i=1,nWalls
+!		cond = dabs(Wall_Temp_ad(i,1) - wallTemp_ad(2)).gt.SC_ConvCriterion_d)
+	
 	if ((dabs(Wall_Temp_ad(2,1) - wallTemp_ad(2)).gt.SC_ConvCriterion_d).and. &
 		(dabs(Wall_Temp_ad(3,1) - wallTemp_ad(3)).gt.SC_ConvCriterion_d).and. &
 		(dabs(Wall_Temp_ad(4,1) - wallTemp_ad(4)).gt.SC_ConvCriterion_d).and. &
 		(dabs(Wall_Temp_ad(5,1) - wallTemp_ad(5)).gt.SC_ConvCriterion_d).and. &
+		(dabs(Wall_Temp_ad(6,1) - wallTemp_ad(6)).gt.SC_ConvCriterion_d).and. &
+		(dabs(Wall_Temp_ad(7,1) - wallTemp_ad(7)).gt.SC_ConvCriterion_d).and. &
+		(dabs(Wall_Temp_ad(8,1) - wallTemp_ad(8)).gt.SC_ConvCriterion_d).and. &
+		(dabs(Wall_Temp_ad(9,1) - wallTemp_ad(9)).gt.SC_ConvCriterion_d).and. &
 		(dabs(GasTempPrev_ad(1) - GasTemp_ad(1)).gt.SC_ConvCriterion_d))then 
-		wallTemp_ad(2)=Wall_Temp_ad(2,1)
-		wallTemp_ad(3)=Wall_Temp_ad(3,1)
-		wallTemp_ad(4)=Wall_Temp_ad(4,1)
-		wallTemp_ad(5)=Wall_Temp_ad(5,1)
+		do i=2,nWalls
+			wallTemp_ad(i)=Wall_Temp_ad(i,1)
+		end do
 		GasTempPrev_ad(1) = GasTemp_ad(1)
 		goto 10	
 	else
@@ -344,69 +295,55 @@ simTime_d=simTime_d+SC_DeltaT_d
 				SC_Temp_ad(k)=Wall_Temp_ad(i,k)
 				SC_X_ad(k)=Wall_X_ad(i,k)
 			end do
-		SC_Area_ad(1)=2.0	
-		call energyStored(SC_NoOfNodes_i,&
-						  SC_DeltaT_d,&
-						  SC_X_ad,&
-						  SC_TempOld_ad,&
-						  SC_Temp_ad,&
-						  SC_Rho_ad(i),&
-						  SC_Cp_ad(i),&
-						  SC_Area_ad(1),&
-						  StoredEnergy_d)
-		Walls_StoredEnergy_ad(i)=StoredEnergy_d				  
+			SC_Area_ad(1)=Wall_Area_ad(i)	
+			call energyStored(SC_NoOfNodes_i,&
+							  SC_DeltaT_d,&
+							  SC_X_ad,&
+							  SC_TempOld_ad,&
+							  SC_Temp_ad,&
+							  SC_Rho_ad(i),&
+							  SC_Cp_ad(i),&
+							  SC_Area_ad(1),&
+							  StoredEnergy_d)
+			Walls_StoredEnergy_ad(i)=StoredEnergy_d				  
 		end do
 						  
-	!Cy_StoredEnergy_d = Cy_Rho_d*Cy_Cp_d*3.14*Cy_Thick_ad*((Cy_Dia_ad/2)**2)&
-	!					*(Cy_Temp_ad-Cy_TempOld_ad)/SC_DeltaT_d
-						
 		Wall_TempOld_ad=Wall_Temp_ad
-		!Cy_TempOld_ad = Cy_Temp_ad
 		do i=2,nWalls
-			Walls_outHeat_ad(i)=SC_Hout_d*SC_Area_ad(1)*(Wall_Temp_ad(i,SC_NoOfNodes_i)-SC_Tout_d)
+			Walls_outHeat_ad(i)=SC_Hout_d*Wall_Area_ad(i)*(Wall_Temp_ad(i,SC_NoOfNodes_i)-SC_Tout_d)
 		end do	
-		netOutHeat_d=Walls_outHeat_ad(2)+Walls_StoredEnergy_ad(2)+&
-					Walls_outHeat_ad(3)+Walls_StoredEnergy_ad(3)+&
-					Walls_outHeat_ad(4)+Walls_StoredEnergy_ad(4)+&
-					Walls_outHeat_ad(5)+Walls_StoredEnergy_ad(5)
+		
+		netOutHeat_d = 0.0
+		do i=2,nWalls
+			netOutHeat_d = netOutHeat_d + Walls_outHeat_ad(i) + Walls_StoredEnergy_ad(i)
+		end do
 					
-		write(200,*) simTime_d, Qin_Cy_d,&
+		write(200,*) simTime_d, Qin_plate,&
 					netOutHeat_d, Walls_outHeat_ad(2), Walls_outHeat_ad(3),&
-					Walls_outHeat_ad(4),Walls_outHeat_ad(5),Walls_StoredEnergy_ad(2),&
-					Walls_StoredEnergy_ad(3),&
-					Walls_StoredEnergy_ad(4),&
-					Walls_StoredEnergy_ad(5)
+					Walls_outHeat_ad(4),Walls_outHeat_ad(5), Walls_outHeat_ad(6), &
+					Walls_outHeat_ad(7), Walls_outHeat_ad(8),Walls_outHeat_ad(9), &
+					Walls_StoredEnergy_ad(2), Walls_StoredEnergy_ad(3), &
+					Walls_StoredEnergy_ad(4), Walls_StoredEnergy_ad(5), &
+					Walls_StoredEnergy_ad(6), Walls_StoredEnergy_ad(7), &
+					Walls_StoredEnergy_ad(8), Walls_StoredEnergy_ad(9)
 					
 
-			write(201,*) simTime_d, (Wall_Temp_ad(2,i), &
-				i=1,SC_NoOfNodes_i)
-							write(202,*) simTime_d, (Wall_Temp_ad(3,i), &
-				i=1,SC_NoOfNodes_i)
-							write(203,*) simTime_d, (Wall_Temp_ad(4,i), &
-				i=1,SC_NoOfNodes_i)
-							write(204,*) simTime_d, (Wall_Temp_ad(5,i), &
-				i=1,SC_NoOfNodes_i)
-			
-			!write(205,*) simTime_d, GasTemp_ad
-			write(205,*)simTime_d, (Wall_Temp_ad(2,1)+Wall_Temp_ad(3,1)&
-			+Wall_Temp_ad(4,1)+Wall_Temp_ad(5,1))/4, GasTemp_ad
-
-		simTime_d=simTime_d+SC_DeltaT_d
+		write(201,*) simTime_d, Wall_Temp_ad(2,SC_NoOfNodes_i), (Wall_Temp_ad(i,1),i=1,nWalls)
+		
+		write(202,*)simTime_d, (Wall_Temp_ad(2,1)+Wall_Temp_ad(3,1)&
+			+Wall_Temp_ad(4,1)+Wall_Temp_ad(5,1)+Wall_Temp_ad(6,1)+Wall_Temp_ad(7,1)&
+			+Wall_Temp_ad(8,1)+Wall_Temp_ad(9,1))/4, GasTemp_ad
+		simTime_d = simTime_d + SC_DeltaT_d
 		goto 20	
 	end if	
 end do
- print *, "FINAL results"
-! print *,"X array ", SC_X_ad
- !print *, "Temperatures ", SC_Temp_ad
+print *, "FINAL results"
+
 close(200)
 close(201)
 close(202)
-close(203)
-close(204)
-close(205)
 	
 end program Test_Problem
-
 
 ! --------------------------------------------------!
 !   Energy Stored Subroutine (thermal inertia)      !
@@ -439,8 +376,6 @@ end do
 !print *,"in subroutine------------------------",loc_ad
 !print *, prevTemp_ad
 !print *, currTemp_ad
-
-!print *,"Out subroutine------------------------"
 
 
 end subroutine energyStored
