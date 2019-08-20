@@ -63,6 +63,7 @@ real*8, dimension(1) :: &
 integer, dimension(nWalls,nWalls) :: &	
 	deltaKronecker_ai
 
+!Simulation Time variable
 simTime_d=0.0
 sigma_d=5.67E-08
 
@@ -77,11 +78,13 @@ do i=1,nWalls
 	end do
 end do
 
+!Files to write Gas temperatures and results
 open(200, file='Results.dat', ACTION='WRITE')
 open(201, file='WallTemp.dat', ACTION='WRITE')
 open(202, file='GasTemp.dat', ACTION='WRITE')
+
 write(200,*) "Time, Temperature, HeatIn, HeatOut, HeatLossConvection, EnergyStored"
-write(201,*) "Wall_2, Wall_3, Wall_4, Wall_5, Wall_6, Wall_7, Wall_8, Wall_9"
+write(201,*) "Simulation_Time, Wall_2, Wall_3, Wall_4, Wall_5, Wall_6, Wall_7, Wall_8, Wall_9"
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Reading data from input file
@@ -118,7 +121,7 @@ end do
 ! read area
 read(2,*)
 read(2,*)(Wall_Area_ad(i),i=1,nWalls)
-print *, Wall_Area_ad
+
 ! read thickness
 read(2,*)
 read(2,*)(Wall_thk_ad(i),i=1,nWalls)
@@ -134,6 +137,10 @@ read(2,*) SC_ConvCriterion_d
 ! read Qin plate :
 read(2,*)
 read(2,*) Qin_plate
+
+! read Gas temperature :
+read(2,*)
+read(2,*) GasTemp_ad
 
 ! read HTC for gas convection on inner sides
 read(2,*)
@@ -155,10 +162,9 @@ do i=1, nWalls
 	end do	
 end do
 
-GasTemp_ad(1) = 750.0
 GasTempPrev_ad = GasTemp_ad
 
-simTime_d = simTime_d+SC_DeltaT_d
+simTime_d = simTime_d + SC_DeltaT_d
 	
 ! creating matrix A
 20 do while(simTime_d<=endTime_d)
@@ -198,7 +204,7 @@ simTime_d = simTime_d+SC_DeltaT_d
 		heat_inner_walls(i) = wallEmiss_ad(i)/(1.0d0-wallEmiss_ad(i))* &
 				(sigma_d * wallTemp_ad(i)**4 - wallHeatFluxOut_ad(i)) + &
 				(GasHTC_ad(i)*(wallTemp_ad(i) - GasTemp_ad(1)))
-		!To compare the heat input and heat output
+		!To compare the heat input and heat output, divide by area
 		heat_inner_walls(i)=heat_inner_walls(i)*Wall_Area_ad(i) 
 	end do	
 
@@ -207,7 +213,7 @@ simTime_d = simTime_d+SC_DeltaT_d
 
 	do i=1,5
 		if (i.eq.1) then
-		wallTemp_ad(i)=(1/sigma_d * (wallHeatFlux_ad(i)* wallEmiss_ad(i)/(1-wallEmiss_ad(i)) &
+		wallTemp_ad(i)=(1/sigma_d * (wallHeatFlux_ad(i)* (1-wallEmiss_ad(i))/wallEmiss_ad(i) &
 							+ wallHeatFluxOut_ad(i)))**0.25
 		end if
 	end do
@@ -270,10 +276,6 @@ simTime_d = simTime_d+SC_DeltaT_d
 	end do
 	GasTemp_ad(1)=num/den
 
-	
-!	do i=1,nWalls
-!		cond = dabs(Wall_Temp_ad(i,1) - wallTemp_ad(2)).gt.SC_ConvCriterion_d)
-	
 	if ((dabs(Wall_Temp_ad(2,1) - wallTemp_ad(2)).gt.SC_ConvCriterion_d).and. &
 		(dabs(Wall_Temp_ad(3,1) - wallTemp_ad(3)).gt.SC_ConvCriterion_d).and. &
 		(dabs(Wall_Temp_ad(4,1) - wallTemp_ad(4)).gt.SC_ConvCriterion_d).and. &
@@ -328,11 +330,16 @@ simTime_d = simTime_d+SC_DeltaT_d
 					Walls_StoredEnergy_ad(8), Walls_StoredEnergy_ad(9)
 					
 
-		write(201,*) simTime_d, Wall_Temp_ad(2,SC_NoOfNodes_i), (Wall_Temp_ad(i,1),i=1,nWalls)
+		write(201,*) simTime_d, (Wall_Temp_ad(i,1), i=2,nWalls), (Wall_Temp_ad(i,2), i=2,nWalls), &
+			(Wall_Temp_ad(i,3), i=2,nWalls), (Wall_Temp_ad(i,4), i=2,nWalls), &
+			(Wall_Temp_ad(i,5), i=2,nWalls), (Wall_Temp_ad(i,6), i=2,nWalls), &
+			(Wall_Temp_ad(i,7), i=2,nWalls), (Wall_Temp_ad(i,8), i=2,nWalls), &
+			(Wall_Temp_ad(i,9), i=2,nWalls), (Wall_Temp_ad(i,10), i=2,nWalls)
 		
 		write(202,*)simTime_d, (Wall_Temp_ad(2,1)+Wall_Temp_ad(3,1)&
 			+Wall_Temp_ad(4,1)+Wall_Temp_ad(5,1)+Wall_Temp_ad(6,1)+Wall_Temp_ad(7,1)&
 			+Wall_Temp_ad(8,1)+Wall_Temp_ad(9,1))/4, GasTemp_ad
+		
 		simTime_d = simTime_d + SC_DeltaT_d
 		goto 20	
 	end if	
